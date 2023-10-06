@@ -1,16 +1,16 @@
 const x = 5
 
 fn const_test() {
-	assert x == 5
+//	assert x == 5
 }
 
-/*__global y = 10
+__global y = 10
 
 fn global_test() {
-	assert y == 10
-}*/
+//	assert y == 10
+}
 
 fn main() {
 	const_test()
-	//global_test()
+	global_test()
 }

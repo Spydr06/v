@@ -731,8 +731,6 @@ pub fn (mut g Gen) generate_pe_header() {
 	mut text_section := &mut g.pe_sections[text_section_index]
 	g.code_start_pos = g.pos()
 	text_section.set_pointer_to_raw_data(mut g, int(g.code_start_pos))
-
-	g.gen_toplevel_program(false)
 }
 
 fn (mut g Gen) patch_section_virtual_addrs() {

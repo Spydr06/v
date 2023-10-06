@@ -349,7 +349,8 @@ pub fn gen(files []&ast.File, table &ast.Table, out_name string, pref_ &pref.Pre
 	}
 
 	g.code_gen.g = g
-	g.generate_header()
+	use_c_main := g.generate_header()
+	g.gen_toplevel_program(use_c_main)
 	g.init_builtins()
 	g.calculate_all_size_align()
 	g.calculate_enum_fields()
@@ -439,7 +440,7 @@ pub fn (mut g Gen) ast_fetch_external_deps() {
 	g.requires_linking = g.has_external_deps()
 }
 
-pub fn (mut g Gen) generate_header() {
+pub fn (mut g Gen) generate_header() bool {
 	g.ast_fetch_external_deps()
 
 	match g.pref.os {
@@ -452,6 +453,7 @@ pub fn (mut g Gen) generate_header() {
 		.linux {
 			if g.requires_linking {
 				g.generate_linkable_elf_header()
+				return true
 			} else {
 				g.generate_simple_elf_header()
 			}
@@ -465,6 +467,7 @@ pub fn (mut g Gen) generate_header() {
 			g.n_error('only `raw`, `linux`, `windows` and `macos` are supported for -os in -native')
 		}
 	}
+	return false
 }
 
 pub fn (mut g Gen) create_executable() {

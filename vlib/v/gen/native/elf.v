@@ -751,10 +751,6 @@ pub fn (mut g Gen) generate_linkable_elf_header() {
 	text_section := sections[g.find_section_header('.text', sections)]
 	g.elf_text_header_addr = text_section.header.offset
 	g.write64_at(g.elf_text_header_addr + 24, g.pos()) // write the code start pos to the text section
-
-	g.gen_toplevel_program(true)
-
-	g.debug_pos = int(g.pos())
 }
 
 pub fn (mut g Gen) generate_simple_elf_header() {
@@ -785,35 +781,6 @@ pub fn (mut g Gen) generate_simple_elf_header() {
 
 	g.code_start_pos = g.pos()
 	g.debug_pos = int(g.pos())
-
-	g.gen_toplevel_program(false)
-
-	g.debug_pos = int(g.pos())
-}
-
-pub fn (mut g Gen) elf_string_table() {
-	mut generated := map[string]int{}
-
-	for _, s in g.strs {
-		pos := generated[s.str] or { g.buf.len }
-
-		match s.typ {
-			.abs64 {
-				g.write64_at(s.pos, pos)
-			}
-			.rel32 {
-				g.write32_at(s.pos, pos - s.pos - 4)
-			}
-			else {
-				g.n_error('unsupported string reloc type')
-			}
-		}
-
-		if s.str !in generated {
-			generated[s.str] = pos
-			g.write_string(s.str)
-		}
-	}
 }
 
 pub fn (mut g Gen) gen_rela_section() {
@@ -828,7 +795,7 @@ pub fn (mut g Gen) gen_rela_section() {
 }
 
 pub fn (mut g Gen) generate_elf_footer() {
-	g.elf_string_table()
+	g.sym_string_table()
 
 	// write size of text section into section header
 	if g.elf_text_header_addr != -1 {

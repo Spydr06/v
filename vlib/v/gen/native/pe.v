@@ -169,7 +169,6 @@ pub fn (mut g Gen) gen_pe_header() {
 		assert native.pe_coff_hdr_size == pe_header.len * 2
 	}
 
-	g.pe_coff_hdr_pos = g.pos()
 	for i, b in pe_header {
 		end_addr := i * 2 + 2 // allign correctly with description table
 		g.write16(b)

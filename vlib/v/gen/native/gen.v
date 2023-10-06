@@ -16,7 +16,11 @@ import v.eval
 import term
 import strconv
 
-const placeholder = 0
+const (
+	placeholder   = 0
+	vinit_name    = '#vinit'
+	vcleanup_name = '#vcleanup'
+)
 
 [heap; minify]
 pub struct Gen {
@@ -28,9 +32,7 @@ mut:
 	table                     &ast.Table = unsafe { nil }
 	buf                       []u8
 	sect_header_name_pos      int
-	offset                    i64
 	file_size_pos             i64
-	start_symbol_addr         i64
 	code_start_pos            i64 // location of the start of the assembly instructions
 	symbol_table              []SymbolTableSection
 	extern_symbols            []string
@@ -47,7 +49,6 @@ mut:
 	errors                    []errors.Error
 	warnings                  []errors.Warning
 	syms                      []Symbol
-	size_pos                  []int
 	nlines                    int
 	callpatches               []CallPatch
 	strs                      []String
@@ -59,21 +60,19 @@ mut:
 	enum_vals                 map[string]Enum
 	return_type               ast.Type
 	comptime_omitted_branches []ast.IfBranch
+	requires_linking          bool
 	// elf specific
 	elf_text_header_addr i64 = -1
 	elf_rela_section     Section
 	// macho specific
 	macho_ncmds   int
 	macho_cmdsize int
+	size_pos      []int
 	// pe specific
-	pe_coff_hdr_pos    i64
 	pe_opt_hdr_pos     i64
-	pe_text_size_pos   i64
 	pe_data_dirs       PeDataDirs = get_pe_data_dirs()
 	pe_sections        []PeSection
 	pe_dll_relocations map[string]i64
-
-	requires_linking bool
 }
 
 interface CodeGen {
@@ -1006,9 +1005,9 @@ fn (mut g Gen) gen_toplevel_program(c_main bool) {
 		println(term.green('\n${toplevel_fn_name}:'))
 	}
 	// vinit
-	g.delay_fn_call('#vinit')
+	g.delay_fn_call(native.vinit_name)
 	g.code_gen.call(native.placeholder)
-	g.println('; call #vinit')
+	g.println('; call ' + native.vinit_name)
 
 	// call main
 	g.delay_fn_call('main.main')
@@ -1016,9 +1015,9 @@ fn (mut g Gen) gen_toplevel_program(c_main bool) {
 	g.println('; call main.main')
 
 	// vcleanup
-	g.delay_fn_call('#vcleanup')
+	g.delay_fn_call(native.vcleanup_name)
 	g.code_gen.call(native.placeholder)
-	g.println('; call #vcleanup')
+	g.println('; call ' + native.vcleanup_name)
 
 	// terminate program
 	if c_main {
@@ -1033,12 +1032,12 @@ fn (mut g Gen) gen_toplevel_program(c_main bool) {
 
 fn (mut g Gen) gen_vinit() {
 	if g.pref.is_verbose {
-		println(term.green('\n#vinit:'))
+		println(term.green('\n${native.vinit_name}:'))
 	}
 	g.stack_var_pos = 0
 	g.stack_depth = 0
 	g.return_type = ast.void_type
-	g.register_function_address('#vinit')
+	g.register_function_address(native.vinit_name)
 
 	// initialize all globals here
 
@@ -1047,12 +1046,12 @@ fn (mut g Gen) gen_vinit() {
 
 fn (mut g Gen) gen_vcleanup() {
 	if g.pref.is_verbose {
-		println(term.green('\n#vcleanup:'))
+		println(term.green('\n${native.vcleanup_name}:'))
 	}
 	g.stack_var_pos = 0
 	g.stack_depth = 0
 	g.return_type = ast.void_type
-	g.register_function_address('#vcleanup')
+	g.register_function_address(native.vcleanup_name)
 
 	// de-initialize globals here
 

@@ -565,10 +565,6 @@ fn (mut g Gen) gen_sections(mut sections []Section) {
 
 fn (mut g Gen) gen_symtab_data(section Section, data []SymbolTableSection) {
 	for symbol in data {
-		if symbol.str_name == 'main' { // represents the C main function
-			g.start_symbol_addr = g.pos()
-		}
-
 		g.write32(symbol.name)
 		g.write8(symbol.info)
 		g.write8(symbol.other)

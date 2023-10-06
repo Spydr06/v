@@ -16,6 +16,8 @@ import v.eval
 import term
 import strconv
 
+const placeholder = 0
+
 [heap; minify]
 pub struct Gen {
 	out_name string
@@ -28,8 +30,6 @@ mut:
 	sect_header_name_pos      int
 	offset                    i64
 	file_size_pos             i64
-	main_fn_addr              i64
-	main_fn_size              i64
 	start_symbol_addr         i64
 	code_start_pos            i64 // location of the start of the assembly instructions
 	symbol_table              []SymbolTableSection
@@ -1075,11 +1075,7 @@ fn (mut g Gen) fn_decl(node ast.FnDecl) {
 }
 
 pub fn (mut g Gen) register_function_address(name string) {
-	if name == 'main.main' {
-		g.main_fn_addr = i64(g.buf.len)
-	} else {
-		g.fn_addr[name] = g.pos()
-	}
+	g.fn_addr[name] = g.pos()
 }
 
 fn (mut g Gen) println(comment string) {

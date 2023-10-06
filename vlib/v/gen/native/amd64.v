@@ -1869,7 +1869,7 @@ pub fn (mut c Amd64) call_fn(node ast.CallExpr) {
 		}
 	} else if addr == 0 {
 		c.g.delay_fn_call(n)
-		c.call(int(0))
+		c.call(placeholder)
 	} else {
 		c.call(int(addr))
 	}

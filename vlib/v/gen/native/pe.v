@@ -733,9 +733,9 @@ pub fn (mut g Gen) generate_pe_header() {
 	g.code_start_pos = g.pos()
 	text_section.set_pointer_to_raw_data(mut g, int(g.code_start_pos))
 
-	g.code_gen.call(0)
+	g.delay_fn_call('main.main')
+	g.code_gen.call(placeholder)
 	g.code_gen.ret()
-	g.main_fn_addr = g.pos()
 }
 
 fn (mut g Gen) patch_section_virtual_addrs() {
@@ -796,22 +796,6 @@ pub fn (mut g Gen) generate_pe_footer() {
 
 	g.patch_pe_code_size()
 	g.patch_pe_image_size()
-
-	// patch call main
-	match g.pref.arch {
-		.arm64 {
-			bl_next := u32(0x94000001)
-			g.write32_at(g.code_start_pos, int(bl_next))
-		}
-		.amd64 {
-			// +1 is for "e8"
-			// -5 is for "e8 00 00 00 00"
-			g.write32_at(g.code_start_pos + 1, int(g.main_fn_addr - g.code_start_pos) - 5)
-		}
-		else {
-			g.n_error('unsupported platform ${g.pref.arch}')
-		}
-	}
 
 	g.println('')
 	g.println('=== end ===')

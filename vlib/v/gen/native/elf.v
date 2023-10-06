@@ -128,7 +128,6 @@ const (
 
 const (
 	segment_start = 0x400000
-	placeholder   = 0
 )
 
 struct ElfHeader {
@@ -760,8 +759,9 @@ pub fn (mut g Gen) generate_linkable_elf_header() {
 	g.elf_text_header_addr = text_section.header.offset
 	g.write64_at(g.elf_text_header_addr + 24, g.pos()) // write the code start pos to the text section
 
-	g.code_gen.call(native.placeholder)
-	g.println('; call main.main')
+	g.delay_fn_call('main.main')
+	g.code_gen.call(placeholder)
+
 	g.code_gen.mov64(g.code_gen.main_reg(), 0)
 	g.code_gen.ret()
 	g.println('; return 0')
@@ -798,7 +798,8 @@ pub fn (mut g Gen) generate_simple_elf_header() {
 	g.code_start_pos = g.pos()
 	g.debug_pos = int(g.pos())
 
-	g.code_gen.call(native.placeholder)
+	g.delay_fn_call('main.main')
+	g.code_gen.call(placeholder)
 	g.println('; call main.main')
 
 	// generate exit syscall
@@ -870,18 +871,6 @@ pub fn (mut g Gen) generate_elf_footer() {
 	file_size := g.buf.len
 	g.write64_at(g.file_size_pos, file_size) // set file size 64 bit value
 	g.write64_at(g.file_size_pos + 8, file_size)
-	if g.pref.arch == .arm64 {
-		bl_next := u32(0x94000001)
-		g.write32_at(g.code_start_pos, int(bl_next))
-	} else {
-		// amd64
-		// call main function, it's not guaranteed to be the first
-		// we generated call(0) ("e8 0")
-		// now need to replace "0" with a relative address of the main function
-		// +1 is for "e8"
-		// -5 is for "e8 00 00 00 00"
-		g.write32_at(g.code_start_pos + 1, int(g.main_fn_addr - g.code_start_pos) - 5)
-	}
 	g.create_executable()
 }
 

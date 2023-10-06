@@ -256,7 +256,9 @@ pub fn (mut g Gen) generate_macho_header() {
 
 	g.write32_at(cmdsize_offset, g.buf.len - 24)
 	g.write_nulls(pagesize - g.buf.len)
-	g.code_gen.call(0)
+
+	g.delay_fn_call('main.main')
+	g.code_gen.call(placeholder)
 }
 
 fn (mut g Gen) get_pagesize() int {
@@ -367,21 +369,7 @@ pub fn (mut g Gen) generate_macho_footer() {
 	}
 	g.write64(0)
 	g.macho_patch_header()
-	if g.pref.arch == .amd64 {
-		call_delta := int(g.main_fn_addr - g.code_start_pos) - 5
-		g.write32_at(g.code_start_pos + 1, call_delta)
-		g.create_executable()
-	} else {
-		call_delta := int(g.main_fn_addr - g.code_start_pos)
-		if (call_delta % 4) != 0 || call_delta < 0 {
-			g.n_error('Invalid entrypoint->main delta (${call_delta})')
-		} else {
-			blop := (0x94 << 24) | (call_delta / 4)
-			g.write32_at(g.code_start_pos, int(blop))
-			g.write_nulls(g.get_pagesize() - g.buf.len)
-			g.create_executable()
-		}
-	}
+	g.create_executable()
 }
 
 fn (mut g Gen) sym_table_command() {

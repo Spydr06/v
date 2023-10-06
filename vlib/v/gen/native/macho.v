@@ -257,8 +257,7 @@ pub fn (mut g Gen) generate_macho_header() {
 	g.write32_at(cmdsize_offset, g.buf.len - 24)
 	g.write_nulls(pagesize - g.buf.len)
 
-	g.delay_fn_call('main.main')
-	g.code_gen.call(placeholder)
+	g.gen_toplevel_program(false)
 }
 
 fn (mut g Gen) get_pagesize() int {

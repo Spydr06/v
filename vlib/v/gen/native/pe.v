@@ -733,9 +733,7 @@ pub fn (mut g Gen) generate_pe_header() {
 	g.code_start_pos = g.pos()
 	text_section.set_pointer_to_raw_data(mut g, int(g.code_start_pos))
 
-	g.delay_fn_call('main.main')
-	g.code_gen.call(placeholder)
-	g.code_gen.ret()
+	g.gen_toplevel_program(false)
 }
 
 fn (mut g Gen) patch_section_virtual_addrs() {

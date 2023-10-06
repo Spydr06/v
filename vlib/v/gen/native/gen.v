@@ -366,6 +366,8 @@ pub fn gen(files []&ast.File, table &ast.Table, out_name string, pref_ &pref.Pre
 		}
 		g.stmts(file.stmts)
 	}
+	g.gen_vinit()
+	g.gen_vcleanup()
 	g.generate_builtins()
 	g.generate_footer()
 
@@ -996,6 +998,65 @@ fn (mut g Gen) gen_var_to_string(reg Register, expr ast.Expr, var Var, config Va
 	} else {
 		g.n_error('int-to-string conversion not implemented for type ${typ}')
 	}
+}
+
+fn (mut g Gen) gen_toplevel_program(c_main bool) {
+	if g.pref.is_verbose {
+		toplevel_fn_name := if c_main { 'C.main' } else { '_start' }
+		println(term.green('\n${toplevel_fn_name}:'))
+	}
+	// vinit
+	g.delay_fn_call('#vinit')
+	g.code_gen.call(native.placeholder)
+	g.println('; call #vinit')
+
+	// call main
+	g.delay_fn_call('main.main')
+	g.code_gen.call(native.placeholder)
+	g.println('; call main.main')
+
+	// vcleanup
+	g.delay_fn_call('#vcleanup')
+	g.code_gen.call(native.placeholder)
+	g.println('; call #vcleanup')
+
+	// terminate program
+	if c_main {
+		g.code_gen.mov64(g.code_gen.main_reg(), 0)
+		g.code_gen.ret()
+		g.println('; return 0')
+	} else {
+		zero := ast.IntegerLiteral{}
+		g.code_gen.gen_exit(zero)
+	}
+}
+
+fn (mut g Gen) gen_vinit() {
+	if g.pref.is_verbose {
+		println(term.green('\n#vinit:'))
+	}
+	g.stack_var_pos = 0
+	g.stack_depth = 0
+	g.return_type = ast.void_type
+	g.register_function_address('#vinit')
+
+	// initialize all globals here
+
+	g.code_gen.ret()
+}
+
+fn (mut g Gen) gen_vcleanup() {
+	if g.pref.is_verbose {
+		println(term.green('\n#vcleanup:'))
+	}
+	g.stack_var_pos = 0
+	g.stack_depth = 0
+	g.return_type = ast.void_type
+	g.register_function_address('#vcleanup')
+
+	// de-initialize globals here
+
+	g.code_gen.ret()
 }
 
 fn (mut g Gen) is_used_by_main(node ast.FnDecl) bool {

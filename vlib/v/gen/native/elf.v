@@ -751,22 +751,14 @@ pub fn (mut g Gen) generate_linkable_elf_header() {
 
 	g.code_start_pos = g.pos()
 	g.debug_pos = int(g.pos())
-	// if g.start_symbol_addr > 0 {
-	//	g.write64_at(g.start_symbol_addr + native.elf_symtab_size - 16, g.code_start_pos)
-	//}
 
 	text_section := sections[g.find_section_header('.text', sections)]
 	g.elf_text_header_addr = text_section.header.offset
 	g.write64_at(g.elf_text_header_addr + 24, g.pos()) // write the code start pos to the text section
 
-	g.delay_fn_call('main.main')
-	g.code_gen.call(placeholder)
+	g.gen_toplevel_program(true)
 
-	g.code_gen.mov64(g.code_gen.main_reg(), 0)
-	g.code_gen.ret()
-	g.println('; return 0')
-
-	g.debug_pos = g.buf.len
+	g.debug_pos = int(g.pos())
 }
 
 pub fn (mut g Gen) generate_simple_elf_header() {
@@ -798,26 +790,9 @@ pub fn (mut g Gen) generate_simple_elf_header() {
 	g.code_start_pos = g.pos()
 	g.debug_pos = int(g.pos())
 
-	g.delay_fn_call('main.main')
-	g.code_gen.call(placeholder)
-	g.println('; call main.main')
+	g.gen_toplevel_program(false)
 
-	// generate exit syscall
-	match g.pref.arch {
-		.arm64 {
-			g.code_gen.mov(Arm64Register.x16, 0)
-			g.code_gen.mov(Arm64Register.x0, 0)
-			g.code_gen.svc()
-		}
-		.amd64 {
-			g.code_gen.mov(Amd64Register.edi, 0)
-			g.code_gen.mov(Amd64Register.eax, g.nsyscall(.exit))
-			g.code_gen.syscall()
-		}
-		else {
-			g.n_error('unsupported platform ${g.pref.arch}')
-		}
-	}
+	g.debug_pos = int(g.pos())
 }
 
 pub fn (mut g Gen) elf_string_table() {

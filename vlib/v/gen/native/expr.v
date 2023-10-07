@@ -50,6 +50,9 @@ fn (mut g Gen) expr(node ast.Expr) {
 				LocalVar {
 					g.local_var_ident(node, var)
 				}
+				GlobalVar {
+					g.global_var_ident(node, var)
+				}
 				else {
 					g.n_error('Unsupported variable kind')
 				}
@@ -78,15 +81,7 @@ fn (mut g Gen) expr(node ast.Expr) {
 			g.allocate_string(str, 3, .rel32)
 		}
 		ast.CharLiteral {
-			bytes := g.eval_escape_codes(node.val)
-				.bytes()
-			mut val := rune(0)
-			for i, v in bytes {
-				val |= v << (i * 8)
-				if i >= sizeof(rune) {
-					g.n_error('runes are only 4 bytes wide')
-				}
-			}
+			val := g.eval_rune_escape_codes(node.val)
 			g.code_gen.movabs(g.code_gen.main_reg(), i64(val))
 		}
 		ast.StructInit {
@@ -148,6 +143,17 @@ fn (mut g Gen) local_var_ident(ident ast.Ident, var LocalVar) {
 				g.n_error('Unsupported variable type')
 			}
 		}
+	}
+}
+
+fn (mut g Gen) global_var_ident(ident ast.Ident, var GlobalVar) {
+	if g.is_register_type(var.typ) {
+		g.code_gen.mov_var_to_reg(g.code_gen.main_reg(), ident)
+	} else if g.is_fp_type(var.typ) {
+		g.code_gen.load_fp_var(ident)
+	} else {
+		// TODO:
+		g.n_error('Non-register typed globals are not supported yet.')
 	}
 }
 
@@ -326,17 +332,28 @@ fn (mut g Gen) gen_print_from_expr(expr ast.Expr, typ ast.Type, name string) {
 			}
 		}
 		ast.Ident {
-			vo := g.try_var_offset(expr.name)
-
 			reg := g.code_gen.main_reg()
-			if vo != -1 {
-				g.gen_var_to_string(reg, expr, expr as ast.Ident)
-				g.code_gen.gen_print_reg(reg, -1, fd)
-				if newline {
-					g.code_gen.gen_print('\n', fd)
+			var := g.get_var_from_ident(expr)
+
+			match var {
+				LocalVar {
+					vo := g.try_var_offset(expr.name)
+					if vo != -1 {
+						g.gen_var_to_string(reg, expr, expr as ast.Ident)
+					}
 				}
-			} else {
-				g.code_gen.gen_print_reg(reg, -1, fd)
+				GlobalVar {
+					g.global_var_ident(expr, var)
+					g.gen_to_string(reg, typ)
+				}
+				else {
+					g.n_error('unhandled variable type')
+				}
+			}
+
+			g.code_gen.gen_print_reg(reg, -1, fd)
+			if newline {
+				g.code_gen.gen_print('\n', fd)
 			}
 		}
 		ast.IntegerLiteral {
@@ -445,14 +462,26 @@ fn (mut g Gen) gen_selector_expr(expr ast.SelectorExpr) {
 fn (mut g Gen) gen_left_value(node ast.Expr) {
 	match node {
 		ast.Ident {
-			offset := g.get_var_offset(node.name)
-			g.code_gen.lea_var_to_reg(Amd64Register.rax, offset)
+			var := g.get_var_from_ident(node)
+			match var {
+				LocalVar {
+					offset := g.get_var_offset(node.name)
+					g.code_gen.lea_var_to_reg(g.code_gen.main_reg(), offset)
+				}
+				GlobalVar {
+					g.access_global(var.name, 3, .rel32)
+					g.code_gen.learel(g.code_gen.main_reg(), placeholder)
+				}
+				else {
+					g.n_error('unsupported variable kind')
+				}
+			}
 		}
 		ast.SelectorExpr {
 			g.expr(node.expr)
 			offset := g.get_field_offset(node.expr_type, node.field_name)
 			if offset != 0 {
-				g.code_gen.add(Amd64Register.rax, offset)
+				g.code_gen.add(g.code_gen.main_reg(), offset)
 			}
 		}
 		ast.StructInit, ast.ArrayInit {

@@ -356,13 +356,13 @@ pub fn (mut g Gen) generate_macho_footer() {
 	codesize := g.buf.len - 0x1000
 	g.write_relocs()
 	g.sym_table()
-	stringtablesize := g.sym_string_table()
-	delta := codesize + stringtablesize + 12 // code_offset_end - 0x1000// + stringtablesize
+	datasize := g.generate_data_section()
+	delta := codesize + datasize + 12 // code_offset_end - 0x1000 + datasize
 	g.write8(0)
 	for o in g.size_pos {
 		n := g.read32_at(o)
 		// eprintln('$n + $delta')
-		g.write32_at(o, n + delta)
+		g.write32_at(o, int(n + delta))
 	}
 	g.write64(0)
 	g.macho_patch_header()

@@ -204,6 +204,11 @@ pub fn verror(kind string, s string) {
 	exit(1)
 }
 
+pub fn vwarning(kind string, s string) {
+	final_kind := bold(color(kind, kind))
+	eprintln('${final_kind}: ${s}')
+}
+
 pub fn vlines_escape_path(path string, ccompiler string) string {
 	is_cc_tcc := ccompiler.contains('tcc')
 	if is_cc_tcc {

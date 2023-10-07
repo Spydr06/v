@@ -595,15 +595,26 @@ fn (mut c Amd64) mov_deref(r Register, rptr Register, typ ast.Type) {
 }
 
 fn (mut c Amd64) mov_store(regptr Amd64Register, reg Amd64Register, size Size) {
-	if size == ._16 {
-		c.g.write8(0x66)
+	size_str := match size {
+		._8 {
+			'BYTE'
+		}
+		._16 {
+			c.g.write8(0x66)
+			'WORD'
+		}
+		._32 {
+			'DWORD'
+		}
+		._64 {
+			c.g.write8(0x48 + int(reg) / 8 * 4 + int(regptr) / 8)
+			'QWORD'
+		}
 	}
-	if size == ._64 {
-		c.g.write8(0x48 + int(reg) / 8 * 4 + int(regptr) / 8)
-	}
+
 	c.g.write8(if size == ._8 { 0x88 } else { 0x89 })
 	c.g.write8(int(reg) % 8 * 8 + int(regptr) % 8)
-	c.g.println('mov [${regptr}], ${reg}')
+	c.g.println('mov ${size_str} PTR [${regptr}], ${reg}')
 }
 
 fn (mut c Amd64) mov_reg_to_var(var Var, r Register, config VarConfig) {
@@ -697,7 +708,41 @@ fn (mut c Amd64) mov_reg_to_var(var Var, r Register, config VarConfig) {
 			c.g.println('mov ${size_str} PTR [rbp-${offset.hex2()}],${reg}')
 		}
 		GlobalVar {
-			// TODO
+			var_reg := if reg == .rax { Amd64Register.rcx } else { Amd64Register.rax }
+			c.g.access_global(var.name, 3, .rel32)
+			c.learel(var_reg, placeholder)
+
+			raw_type := if config.typ == 0 { var.typ } else { config.typ }
+			typ := c.g.unwrap(raw_type)
+
+			mut size := Size._64
+			if !raw_type.is_any_kind_of_pointer() && !typ.is_any_kind_of_pointer() {
+				match typ {
+					ast.i64_type_idx, ast.u64_type_idx, ast.isize_type_idx, ast.usize_type_idx,
+					ast.int_literal_type_idx {
+						size = ._64
+					}
+					ast.int_type_idx, ast.u32_type_idx, ast.rune_type_idx {
+						size = ._32
+					}
+					ast.i16_type_idx, ast.u16_type_idx {
+						size = ._16
+					}
+					ast.i8_type_idx, ast.u8_type_idx, ast.char_type_idx, ast.bool_type_idx {
+						size = ._8
+					}
+					else {
+						ts := c.g.table.sym(typ.idx())
+						if ts.info is ast.Enum {
+							size = ._32
+						} else {
+							c.g.n_error('unsupported type for mov_reg_to_var ${ts.info}')
+						}
+					}
+				}
+			}
+
+			c.mov_store(var_reg, reg, size)
 		}
 	}
 }
@@ -888,7 +933,10 @@ fn (mut c Amd64) mov_var_to_reg(reg Register, var Var, config VarConfig) {
 			c.g.println('${instruction} ${reg}, ${size_str} PTR [rbp-${offset.hex2()}]')
 		}
 		GlobalVar {
-			// TODO
+			typ := c.g.unwrap(if config.typ == 0 { var.typ } else { config.typ })
+			c.g.access_global(var.name, 3, .rel32)
+			c.learel(Amd64Register.rax, placeholder)
+			c.mov_deref(Amd64Register.rax, Amd64Register.rax, typ)
 		}
 	}
 }
@@ -3759,7 +3807,10 @@ fn (mut c Amd64) mov_var_to_ssereg(reg Amd64SSERegister, var Var, config VarConf
 			c.g.println('${inst} ${reg}, [rbp-${offset.hex2()}]')
 		}
 		GlobalVar {
-			// TODO
+			typ := c.g.unwrap(if config.typ == 0 { var.typ } else { config.typ })
+			c.g.access_global(var.name, 3, .rel32)
+			c.learel(Amd64Register.rax, placeholder)
+			c.mov_deref(Amd64Register.rax, Amd64Register.rax, typ)
 		}
 	}
 }

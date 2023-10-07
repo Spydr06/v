@@ -50,6 +50,8 @@ mut:
 	nlines                    int
 	callpatches               []CallPatch
 	strs                      []String
+	globals                   []Global
+	global_patches            []GlobalPatch
 	labels                    &LabelTable = unsafe { nil }
 	defer_stmts               []ast.DeferStmt
 	builtins                  map[Builtin]BuiltinFn
@@ -165,6 +167,19 @@ struct String {
 	typ RelocType
 }
 
+struct Global {
+	name                   string
+	typ                    ast.Type
+	init_val               ast.Expr
+	is_simple_define_const bool
+}
+
+struct GlobalPatch {
+	name string
+	pos  int
+	typ  RelocType
+}
+
 struct CallPatch {
 	name string
 	pos  int
@@ -226,7 +241,10 @@ struct LocalVar {
 	name   string
 }
 
-struct GlobalVar {}
+struct GlobalVar {
+	typ  ast.Type
+	name string
+}
 
 [params]
 struct VarConfig {
@@ -254,6 +272,11 @@ union F64I64 {
 	i i64
 }
 
+union F32I32 {
+	f f32
+	i int
+}
+
 [inline]
 fn byt(n int, s int) u8 {
 	return u8((n >> (s * 8)) & 0xff)
@@ -273,6 +296,12 @@ fn (mut g Gen) get_var_from_ident(ident ast.Ident) IdentVar {
 				name: obj.name
 			}
 		}
+		ast.ConstField, ast.GlobalField {
+			return GlobalVar{
+				typ: obj.typ
+				name: obj.name
+			}
+		}
 		else {
 			g.n_error('unsupported variable type type:${obj} name:${ident.name}')
 		}
@@ -282,13 +311,18 @@ fn (mut g Gen) get_var_from_ident(ident ast.Ident) IdentVar {
 fn (mut g Gen) get_type_from_var(var Var) ast.Type {
 	match var {
 		ast.Ident {
-			return g.get_type_from_var(g.get_var_from_ident(var) as LocalVar)
+			inner := g.get_var_from_ident(var)
+			return match inner {
+				LocalVar, GlobalVar {
+					g.get_type_from_var(inner)
+				}
+				else {
+					g.n_error('unhandled inner var `${inner}`')
+				}
+			}
 		}
-		LocalVar {
+		LocalVar, GlobalVar {
 			return var.typ
-		}
-		GlobalVar {
-			g.n_error('cannot get type from GlobalVar yet')
 		}
 	}
 }
@@ -365,8 +399,8 @@ pub fn gen(files []&ast.File, table &ast.Table, out_name string, pref_ &pref.Pre
 		}
 		g.stmts(file.stmts)
 	}
-	g.gen_vinit()
-	g.gen_vcleanup()
+	g.generate_vinit()
+	g.generate_vcleanup()
 	g.generate_builtins()
 	g.generate_footer()
 
@@ -856,12 +890,31 @@ fn (mut g Gen) allocate_array(name string, size int, items int) int {
 	return pos
 }
 
+fn (mut g Gen) access_global(name string, opsize int, typ RelocType) {
+	pos := int(g.pos() + opsize)
+	g.global_patches << GlobalPatch{name, pos, typ}
+}
+
 fn (mut g Gen) eval_str_lit_escape_codes(str_lit ast.StringLiteral) string {
 	if str_lit.is_raw {
 		return str_lit.val
 	} else {
 		return g.eval_escape_codes(str_lit.val)
 	}
+}
+
+fn (mut g Gen) eval_rune_escape_codes(r string) rune {
+	bytes := g.eval_escape_codes(r)
+		.bytes()
+	mut val := rune(0)
+	for i, v in bytes {
+		val |= v << (i * 8)
+		if i >= sizeof(rune) {
+			g.n_error('runes are only 4 bytes wide')
+		}
+	}
+
+	return val
 }
 
 fn (mut g Gen) eval_escape_codes(str string) string {
@@ -1017,7 +1070,7 @@ fn (mut g Gen) gen_toplevel_program(c_main bool) {
 	}
 }
 
-fn (mut g Gen) gen_vinit() {
+fn (mut g Gen) generate_vinit() {
 	if g.pref.is_verbose {
 		println(term.green('\n${native.vinit_name}:'))
 	}
@@ -1027,11 +1080,22 @@ fn (mut g Gen) gen_vinit() {
 	g.register_function_address(native.vinit_name)
 
 	// initialize all globals here
+	for global in g.globals {
+		if g.get_type_size(global.typ) == 0 {
+			// FIXME: implement remaining types
+			continue
+		}
+
+		if !global.is_simple_define_const {
+			g.expr(global.init_val)
+			// TODO: save to global
+		}
+	}
 
 	g.code_gen.ret()
 }
 
-fn (mut g Gen) gen_vcleanup() {
+fn (mut g Gen) generate_vcleanup() {
 	if g.pref.is_verbose {
 		println(term.green('\n${native.vcleanup_name}:'))
 	}
@@ -1045,13 +1109,23 @@ fn (mut g Gen) gen_vcleanup() {
 	g.code_gen.ret()
 }
 
-fn (mut g Gen) is_used_by_main(node ast.FnDecl) bool {
-	mut used := true
-	if g.pref.skip_unused {
-		fkey := node.fkey()
-		used = g.table.used_fns[fkey]
+type UsableDecl = ast.ConstField | ast.FnDecl | ast.GlobalField
+
+fn (mut g Gen) is_used_by_main(node UsableDecl) bool {
+	if !g.pref.skip_unused {
+		return true
 	}
-	return used
+	return match node {
+		ast.FnDecl {
+			g.table.used_fns[node.fkey()]
+		}
+		ast.ConstField {
+			g.table.used_consts[node.name]
+		}
+		ast.GlobalField {
+			g.table.used_globals[node.name]
+		}
+	}
 }
 
 fn (mut g Gen) patch_calls() {
@@ -1157,6 +1231,10 @@ pub fn (mut g Gen) n_error(s string) {
 	util.verror('native error', s)
 }
 
+pub fn (mut g Gen) n_warning(s string) {
+	util.vwarning('native warning', s)
+}
+
 pub fn (mut g Gen) warning(s string, pos token.Pos) {
 	if g.pref.skip_warnings {
 		return
@@ -1218,10 +1296,19 @@ fn (mut g Gen) gen_concat_expr(node ast.ConcatExpr) {
 	g.code_gen.lea_var_to_reg(main_reg, var.offset)
 }
 
-fn (mut g Gen) sym_string_table() int {
-	begin := g.buf.len
+fn (mut g Gen) generate_data_section() i64 {
+	begin := g.pos()
+
 	g.zeroes(1)
 	g.println('')
+
+	g.generate_globals()
+	g.generate_string_table()
+
+	return g.pos() - begin
+}
+
+fn (mut g Gen) generate_string_table() {
 	g.println('=== strings ===')
 
 	mut generated := map[string]int{}
@@ -1247,37 +1334,116 @@ fn (mut g Gen) sym_string_table() int {
 			generated[s.str] = pos
 			g.write_string(s.str)
 			if g.pref.is_verbose {
-				g.println('"${escape_string(s.str)}"')
+				g.println('"${util.smart_quote(s.str, false)}"')
 			}
 		}
 	}
-	return g.buf.len - begin
 }
 
-const escape_char = u8(`\\`)
+fn (mut g Gen) generate_globals() {
+	g.println('=== globals ===')
 
-const escape_codes = {
-	u8(`\a`):    u8(`a`)
-	u8(`\b`):    u8(`b`)
-	u8(`\f`):    u8(`f`)
-	u8(`\n`):    u8(`n`)
-	u8(`\r`):    u8(`r`)
-	u8(`\t`):    u8(`t`)
-	u8(`\v`):    u8(`v`)
-	escape_char: escape_char
-	u8(`"`):     u8(`"`)
-}
+	begin := g.pos()
+	mut generated := map[string]int{}
 
-pub fn escape_string(s string) string {
-	mut out := []u8{cap: s.len}
+	for global in g.globals {
+		size := g.get_type_size(global.typ)
+		generated[global.name] = int(g.pos())
 
-	for c in s {
-		if c in native.escape_codes {
-			out << native.escape_char
-			out << native.escape_codes[c]
+		if size == 0 {
+			g.n_warning('unknown size for `${global.name}`')
+		}
+
+		if global.is_simple_define_const {
+			g.const_simple_define(global.init_val, size)
 		} else {
-			out << c
+			g.zeroes(size)
 		}
 	}
-	return out.bytestr()
+
+	g.patch_globals(generated)
+
+	g.debug_pos = int(g.pos())
+	g.println('(${g.globals.len} entries totalling ${g.pos() - begin} bytes)')
+}
+
+fn (mut g Gen) patch_globals(generated map[string]int) {
+	for patch in g.global_patches {
+		pos := generated[patch.name] or { g.n_error('global `${patch.name}` was never generated') }
+
+		match patch.typ {
+			.rel32 {
+				g.write32_at(patch.pos, pos - patch.pos - 4)
+			}
+			else {
+				g.n_error('reloc type `${patch.typ}` not implemented for globals yet')
+			}
+		}
+	}
+}
+
+fn (mut g Gen) const_simple_define(node ast.Expr, type_size int) {
+	match node {
+		ast.CharLiteral {
+			val := g.eval_rune_escape_codes(node.val)
+			println(val)
+
+			match type_size {
+				4 {
+					g.write32(int(val))
+				}
+				else {
+					g.n_error('unexpected type size `${type_size}` for rune literal')
+				}
+			}
+		}
+		ast.FloatLiteral {
+			val := g.eval.expr(node, ast.float_literal_type_idx).float_val()
+			match type_size {
+				4 {
+					ival := unsafe {
+						F32I32{
+							f: f32(val)
+						}.i
+					}
+
+					g.write32(ival)
+				}
+				8 {
+					ival := unsafe {
+						F64I64{
+							f: val
+						}.i
+					}
+
+					g.write64(ival)
+				}
+				else {
+					g.n_error('unexpected type size `${type_size}` for float literal')
+				}
+			}
+		}
+		ast.IntegerLiteral {
+			match type_size {
+				1 {
+					g.write8(node.val.u8())
+				}
+				2 {
+					g.write16(node.val.i16())
+				}
+				4 {
+					g.write32(node.val.int())
+				}
+				8 {
+					g.write64(node.val.i64())
+				}
+				else {
+					g.n_error('unexpected type size `${type_size}` for int literal')
+				}
+			}
+		}
+		else {
+			g.n_error('unexpected const expr')
+		}
+	}
 }

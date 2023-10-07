@@ -41,7 +41,34 @@ fn (mut g Gen) stmt(node ast.Stmt) {
 				}
 			}
 		}
-		ast.ConstDecl {}
+		ast.ConstDecl {
+			for field in node.fields {
+				if !g.is_used_by_main(field) {
+					continue
+				}
+
+				g.globals << Global{
+					name: field.name
+					typ: field.typ
+					init_val: field.expr
+					is_simple_define_const: field.is_simple_define_const()
+				}
+			}
+		}
+		ast.GlobalDecl {
+			for field in node.fields {
+				if !g.is_used_by_main(field) {
+					continue
+				}
+
+				g.globals << Global{
+					name: field.name
+					typ: field.typ
+					init_val: field.expr
+					is_simple_define_const: false
+				}
+			}
+		}
 		ast.DeferStmt {
 			name := '_defer${g.defer_stmts.len}'
 			defer_var := g.get_var_offset(name)
@@ -95,11 +122,6 @@ fn (mut g Gen) stmt(node ast.Stmt) {
 		}
 		ast.AssertStmt {
 			g.gen_assert(node)
-		}
-		ast.GlobalDecl {
-			if !g.pref.experimental {
-				g.warning('globals are not supported yet', node.pos)
-			}
 		}
 		ast.Import {} // do nothing here
 		ast.StructDecl {}

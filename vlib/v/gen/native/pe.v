@@ -780,7 +780,7 @@ fn (mut g Gen) patch_pe_image_size() {
 }
 
 pub fn (mut g Gen) generate_pe_footer() {
-	g.sym_string_table()
+	g.generate_data_section()
 
 	g.align_to(native.pe_file_align)
 	g.file_size_pos = g.pos()

@@ -795,7 +795,7 @@ pub fn (mut g Gen) gen_rela_section() {
 }
 
 pub fn (mut g Gen) generate_elf_footer() {
-	g.sym_string_table()
+	g.generate_data_section()
 
 	// write size of text section into section header
 	if g.elf_text_header_addr != -1 {

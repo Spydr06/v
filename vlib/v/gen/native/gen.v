@@ -28,10 +28,8 @@ pub struct Gen {
 	pref     &pref.Preferences = unsafe { nil } // Preferences shared from V struct
 	files    []&ast.File
 mut:
-	code_gen                  CodeGen
 	table                     &ast.Table = unsafe { nil }
 	buf                       []u8
-	sect_header_name_pos      int
 	file_size_pos             i64
 	code_start_pos            i64 // location of the start of the assembly instructions
 	symbol_table              []SymbolTableSection
@@ -73,6 +71,8 @@ mut:
 	pe_data_dirs       PeDataDirs = get_pe_data_dirs()
 	pe_sections        []PeSection
 	pe_dll_relocations map[string]i64
+pub mut:
+	code_gen CodeGen
 }
 
 interface CodeGen {
@@ -334,7 +334,6 @@ pub fn gen(files []&ast.File, table &ast.Table, out_name string, pref_ &pref.Pre
 	}
 	mut g := &Gen{
 		table: table
-		sect_header_name_pos: 0
 		out_name: exe_name
 		pref: pref_
 		files: files
@@ -372,21 +371,6 @@ pub fn gen(files []&ast.File, table &ast.Table, out_name string, pref_ &pref.Pre
 	g.generate_footer()
 
 	return g.nlines, g.buf.len
-}
-
-// used in macho_test.v
-pub fn macho_test_new_gen(p &pref.Preferences, out_name string) &Gen {
-	mut g := Gen{
-		pref: p
-		out_name: out_name
-		table: ast.new_table()
-		code_gen: Amd64{
-			g: 0
-		}
-		labels: 0
-	}
-	g.code_gen.g = &mut g
-	return &mut g
 }
 
 pub fn (mut g Gen) typ(a int) &ast.TypeSymbol {

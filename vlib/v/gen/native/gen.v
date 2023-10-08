@@ -15,6 +15,7 @@ import v.pref
 import v.eval
 import term
 import strconv
+import math
 
 const (
 	placeholder   = 0
@@ -1087,7 +1088,7 @@ fn (mut g Gen) generate_vinit() {
 		}
 
 		if !global.is_simple_define_const {
-			g.expr(global.init_val)
+			// g.expr(global.init_val)
 			// TODO: save to global
 		}
 	}
@@ -1348,18 +1349,21 @@ fn (mut g Gen) generate_globals() {
 
 	for global in g.globals {
 		size := g.get_type_size(global.typ)
-		generated[global.name] = int(g.pos())
-
+		g.align_to(math.max(size, 8))
 		if size == 0 {
 			g.n_warning('unknown size for `${global.name}`')
 		}
 
+		generated[global.name] = int(g.pos())
+
 		if global.is_simple_define_const {
+			// TODO: inline values directly
 			g.const_simple_define(global.init_val, size)
 		} else {
 			g.zeroes(size)
 		}
 	}
+	g.align_to(8) // safety padding
 
 	g.patch_globals(generated)
 
@@ -1386,8 +1390,6 @@ fn (mut g Gen) const_simple_define(node ast.Expr, type_size int) {
 	match node {
 		ast.CharLiteral {
 			val := g.eval_rune_escape_codes(node.val)
-			println(val)
-
 			match type_size {
 				4 {
 					g.write32(int(val))

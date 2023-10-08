@@ -333,22 +333,22 @@ fn (mut g Gen) gen_print_from_expr(expr ast.Expr, typ ast.Type, name string) {
 		}
 		ast.Ident {
 			reg := g.code_gen.main_reg()
-			var := g.get_var_from_ident(expr)
-
-			match var {
-				LocalVar {
-					vo := g.try_var_offset(expr.name)
-					if vo != -1 {
-						g.gen_var_to_string(reg, expr, expr as ast.Ident)
+			if g.try_var_offset(expr.name) == -1 {
+				match expr.obj {
+					ast.ConstField, ast.GlobalField {
+						var := g.get_var_from_ident(expr)
+						g.global_var_ident(expr, var as GlobalVar)
+						g.gen_to_string(reg, (var as GlobalVar).typ)
+					}
+					else {
+						// FIXME: this triggers with variables initialized with `typeof()`
+						g.n_warning('unresolved variable `${expr.name}`')
+						g.code_gen.gen_print_reg(reg, -1, fd)
+						return
 					}
 				}
-				GlobalVar {
-					g.global_var_ident(expr, var)
-					g.gen_to_string(reg, typ)
-				}
-				else {
-					g.n_error('unhandled variable type')
-				}
+			} else {
+				g.gen_var_to_string(reg, expr, expr as ast.Ident)
 			}
 
 			g.code_gen.gen_print_reg(reg, -1, fd)

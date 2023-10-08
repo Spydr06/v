@@ -936,7 +936,7 @@ fn (mut c Amd64) mov_var_to_reg(reg Register, var Var, config VarConfig) {
 			typ := c.g.unwrap(if config.typ == 0 { var.typ } else { config.typ })
 			c.g.access_global(var.name, 3, .rel32)
 			c.learel(Amd64Register.rax, placeholder)
-			c.mov_deref(Amd64Register.rax, Amd64Register.rax, typ)
+			c.mov_deref(reg, Amd64Register.rax, typ)
 		}
 	}
 }
@@ -3810,7 +3810,7 @@ fn (mut c Amd64) mov_var_to_ssereg(reg Amd64SSERegister, var Var, config VarConf
 			typ := c.g.unwrap(if config.typ == 0 { var.typ } else { config.typ })
 			c.g.access_global(var.name, 3, .rel32)
 			c.learel(Amd64Register.rax, placeholder)
-			c.mov_deref(Amd64Register.rax, Amd64Register.rax, typ)
+			c.mov_deref_sse(reg, Amd64Register.rax, typ)
 		}
 	}
 }

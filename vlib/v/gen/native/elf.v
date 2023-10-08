@@ -523,7 +523,7 @@ fn (mut g Gen) find_section_header(name string, sections []Section) int {
 			return i
 		}
 	}
-	return 0
+	return -1
 }
 
 fn (mut g Gen) gen_section_header(mut sh SectionHeader) {
@@ -678,7 +678,7 @@ fn (mut g Gen) gen_section_data(sections []Section) {
 	}
 }
 
-pub fn (mut g Gen) symtab_get_index(symbols []SymbolTableSection, name string) int {
+fn (mut g Gen) symtab_get_index(symbols []SymbolTableSection, name string) int {
 	for i, sym in symbols {
 		if sym.str_name == name {
 			return i
@@ -692,7 +692,7 @@ pub fn (mut g Gen) generate_linkable_elf_header() {
 
 	// generate program headers
 	mut program_headers := []ProgramHeader{}
-	program_headers << g.create_program_header(native.elf_pt_load, 5, native.elf_p_align)
+	program_headers << g.create_program_header(native.elf_pt_load, 7, native.elf_p_align)
 	// generate sections
 	mut sections := [
 		Section{}, // null section as first section
@@ -738,7 +738,7 @@ pub fn (mut g Gen) generate_linkable_elf_header() {
 	// write sections
 	g.gen_section_data(sections)
 
-	g.elf_rela_section = sections[g.find_section_header('.rela.text', sections)]
+	g.elf_sections = sections
 
 	// user code starts here
 	if g.pref.is_verbose {
@@ -749,14 +749,13 @@ pub fn (mut g Gen) generate_linkable_elf_header() {
 	g.debug_pos = int(g.pos())
 
 	text_section := sections[g.find_section_header('.text', sections)]
-	g.elf_text_header_addr = text_section.header.offset
-	g.write64_at(g.elf_text_header_addr + 24, g.pos()) // write the code start pos to the text section
+	g.write64_at(text_section.header.offset + 24, g.pos()) // write the code start pos to the text section
 }
 
 pub fn (mut g Gen) generate_simple_elf_header() {
 	elf_type := native.elf_type_exec
 
-	mut phdr := g.create_program_header(native.elf_pt_load, 5, native.elf_p_align)
+	mut phdr := g.create_program_header(native.elf_pt_load, 7, native.elf_p_align)
 	phdr.vaddr = native.segment_start
 	phdr.paddr = native.segment_start
 
@@ -779,27 +778,50 @@ pub fn (mut g Gen) generate_simple_elf_header() {
 		eprintln('code_start_pos = ${g.buf.len.hex()}')
 	}
 
+	g.elf_sections = []
 	g.code_start_pos = g.pos()
 	g.debug_pos = int(g.pos())
 }
 
-pub fn (mut g Gen) gen_rela_section() {
+fn (mut g Gen) gen_elf_data_section() {
+	data_align := 4
+	data_section := g.elf_sections[g.find_section_header('.data', g.elf_sections)]
+	g.align_to(data_align)
+	begin := g.pos()
+
+	g.write64_at(data_section.header.offset + 24, begin) // write the data start pos to the data section
+
+	g.generate_data_section()
+
+	g.align_to(data_align)
+	g.write64_at(data_section.header.offset + 32, g.pos() - begin) // write the data size to the data section
+	g.write64_at(data_section.header.offset + 48, data_align)
+
+	bss_section := g.elf_sections[g.find_section_header('.bss', g.elf_sections)]
+	g.write64_at(bss_section.header.offset + 24, g.pos())
+}
+
+fn (mut g Gen) gen_rela_section() {
 	mut relocations := []RelASection{}
 	for call_pos, symbol in g.extern_fn_calls {
 		relocations << g.create_rela_section(symbol, call_pos - g.code_start_pos + 2,
 			g.symtab_get_index(g.symbol_table, symbol[2..]), native.elf_r_amd64_gotpcrelx,
 			-4)
 	}
-	g.elf_rela_section.data = relocations
-	g.gen_section_data([g.elf_rela_section])
+	rela_section := g.find_section_header('.rela.text', g.elf_sections)
+	g.elf_sections[rela_section].data = relocations
+	g.gen_section_data([g.elf_sections[rela_section]])
 }
 
 pub fn (mut g Gen) generate_elf_footer() {
-	g.generate_data_section()
-
 	// write size of text section into section header
-	if g.elf_text_header_addr != -1 {
-		g.write64_at(g.elf_text_header_addr + 32, g.pos() - g.code_start_pos)
+	text_section := g.find_section_header('.text', g.elf_sections)
+	if text_section != -1 {
+		text_section_header_addr := g.elf_sections[text_section].header.offset
+		g.write64_at(text_section_header_addr + 32, g.pos() - g.code_start_pos)
+		g.gen_elf_data_section()
+	} else {
+		g.generate_data_section()
 	}
 
 	if g.extern_symbols.len != 0 {
@@ -812,7 +834,7 @@ pub fn (mut g Gen) generate_elf_footer() {
 	g.create_executable()
 }
 
-pub fn (mut g Gen) prepend_vobjpath(paths []string) []string {
+fn (mut g Gen) prepend_vobjpath(paths []string) []string {
 	vopath := os.getenv('VOBJPATH')
 	if vopath == '' {
 		return paths
@@ -822,7 +844,7 @@ pub fn (mut g Gen) prepend_vobjpath(paths []string) []string {
 	return res
 }
 
-pub fn (mut g Gen) find_o_path(fname string) string {
+fn (mut g Gen) find_o_path(fname string) string {
 	opaths := match g.pref.arch {
 		.amd64 {
 			g.prepend_vobjpath(['/usr/lib/x86_64-linux-gnu', '/usr/lib64', '/usr/lib'])
@@ -845,7 +867,7 @@ pub fn (mut g Gen) find_o_path(fname string) string {
 	return '/dev/null'
 }
 
-pub fn (mut g Gen) get_lpaths() string {
+fn (mut g Gen) get_lpaths() string {
 	mut lpaths := match g.pref.arch {
 		.amd64 {
 			g.prepend_vobjpath(['/usr/lib/x86_64-linux-gnu', '/usr/lib64', '/lib64', '/usr/lib',

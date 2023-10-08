@@ -63,8 +63,7 @@ mut:
 	comptime_omitted_branches []ast.IfBranch
 	requires_linking          bool
 	// elf specific
-	elf_text_header_addr i64 = -1
-	elf_rela_section     Section
+	elf_sections []Section
 	// macho specific
 	macho_ncmds   int
 	macho_cmdsize int
